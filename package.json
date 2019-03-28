@@ -1,0 +1,31 @@
+{
+  "name": "aggregating-event-emitter",
+  "version": "0.0.1",
+  "description": "An event emitter that provides both normal event emitting functionality as well as the ability to aggregate results of calling the event handlers. For example you can use emitAsync to receive an array of the results of all the event handlers that were triggered or emitAsyncWaterfall to process the arguments in series and get the result returned at the end.",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "mocha 'test/**/*.test.js'",
+    "lint": "eslint 'src/**/*.js' 'test/**/*.js'",
+    "watch": "nodemon --ext ts,html,scss,js,json --exec \"npm run lint || exit 1\"",
+    "fix": "eslint \"src/**/*.js\" \"test/**/*.js\" \"*.js\" --fix && stylelint \"src/**/*.scss\" \"*.scss\" --fix"
+  },
+  "keywords": [
+    "event",
+    "eventemitter",
+    "event-emitter",
+    "aggregation"
+  ],
+  "author": "Alcumus Group",
+  "license": "ISC",
+  "devDependencies": {
+    "al-common-tools": "0.0.14",
+    "chai": "^4.2.0",
+    "eslint": "^5.15.1",
+    "mocha": "^6.0.2",
+    "nyc": "^13.3.0",
+    "sinon": "^7.2.7"
+  },
+  "dependencies": {
+    "lodash": "^4.17.11"
+  }
+}
