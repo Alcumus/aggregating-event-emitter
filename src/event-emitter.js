@@ -64,14 +64,16 @@ const eventRegistrars = {
 };
 
 const eventEmitter = ({ getHandlers, registerEventHandler }) => {
+    const getEventObject = event => Object.freeze({ event });
+
     const emit = (event, ...args) => {
         const handlers = getHandlers(event);
-        return handlers.map(handler => handler(...args));
+        return handlers.map(handler => handler(getEventObject(event), ...args));
     };
 
     const emitAsync = async (event, ...args) => {
         const handlers = getHandlers(event);
-        return await Promise.all(handlers.map(async (handler) => await handler(...args)));
+        return await Promise.all(handlers.map(async (handler) => await handler(getEventObject(event), ...args)));
     };
 
     return {

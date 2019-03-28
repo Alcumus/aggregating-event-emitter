@@ -132,6 +132,29 @@ describe('Aggregating Event Emitter', () => {
                 const results = await eventEmitter[emitFunction]('event');
                 expect(results).to.deep.equal(expected);
             });
+
+            it(`#${emitFunction} should pass an event object to every handler that contains the event that caused them to be triggered`, async () => {
+                const eventEmitter = register({
+                    'event': sinon.mock().once().withExactArgs(sinon.match({ event: 'event' })),
+                    'second.event': sinon.mock().once().withExactArgs(sinon.match({ event: 'second.event' }))
+                });
+
+                await eventEmitter[emitFunction]('event');
+                await eventEmitter[emitFunction]('second.event');
+                sinon.verify();
+            });
+
+            it(`#${emitFunction} should pass on any arguments passed to the event to every handler`, async () => {
+                const args = [1, 2, 3];
+                const eventEmitter = register({
+                    'event': sinon.mock().once().withExactArgs(sinon.match.any, ...args),
+                    'second.event': sinon.mock().once().withExactArgs(sinon.match.any, ...args)
+                });
+
+                await eventEmitter[emitFunction]('event', ...args);
+                await eventEmitter[emitFunction]('second.event', ...args);
+                sinon.verify();
+            });
         });
     };
 
