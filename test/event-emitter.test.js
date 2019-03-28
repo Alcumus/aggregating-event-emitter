@@ -113,16 +113,6 @@ describe('Aggregating Event Emitter', () => {
                     await eventEmitter[emitFunction](eventName);
                     sinon.verify();
                 });
-
-                it(`#${emitFunction} should return an array of the returned values from each of the matched handlers`, async () => {
-                    const eventEmitter = register({
-                        'event': _.times(5, n => () => `result-${ n }`)
-                    });
-                    const expected = _.times(5, n => `result-${ n }`);
-
-                    const results = await eventEmitter[emitFunction]('event');
-                    expect(results).to.deep.equal(expected);
-                });
             });
 
             it(`#${emitFunction} should call event handlers registered on all events that match with a wildcard`, async () => {
@@ -131,6 +121,16 @@ describe('Aggregating Event Emitter', () => {
 
                 await eventEmitter[emitFunction](eventName);
                 sinon.verify();
+            });
+
+            it(`#${emitFunction} should return an array of the returned values from each of the matched handlers`, async () => {
+                const eventEmitter = register({
+                    'event': _.times(5, n => () => `result-${ n }`)
+                });
+                const expected = _.times(5, n => `result-${ n }`);
+
+                const results = await eventEmitter[emitFunction]('event');
+                expect(results).to.deep.equal(expected);
             });
         });
     };
