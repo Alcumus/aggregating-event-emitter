@@ -92,11 +92,11 @@ describe('Aggregating Event Emitter', () => {
     });
 
     const testMatchingPatterns = (matchedPatterns, unmatchedPatterns, options, eventName) => {
-        ['emit', 'emitAsync'].forEach(emitFunction => {
+        ['emit', 'emitAsync', 'emitWaterfall', 'emitWaterfallAsync'].forEach(emitFunction => {
             matchedPatterns.forEach(pattern => {
-                it(`#${emitFunction} should call the event handler registered against ${ pattern }`, async () => {
+                it(`#${emitFunction} should call the event handler registered against ${pattern}`, async () => {
                     const events = Object.assign(getAsEventMap(unmatchedPatterns, false), {
-                        [pattern]: sinon.mock(`match:${ pattern }`).once()
+                        [pattern]: sinon.mock(`match:${pattern}`).once()
                     });
                     const eventEmitter = register(events, options);
 
@@ -104,9 +104,9 @@ describe('Aggregating Event Emitter', () => {
                     sinon.verify();
                 });
 
-                it(`#${emitFunction} should call multiple event handlers registered against ${ pattern }`, async () => {
+                it(`#${emitFunction} should call multiple event handlers registered against ${pattern}`, async () => {
                     const events = Object.assign(getAsEventMap(unmatchedPatterns, false), {
-                        [pattern]: [sinon.mock(`match:${ pattern }`).once(), sinon.mock(`match:${ pattern }`).once(), sinon.mock(`match:${ pattern }`).once()]
+                        [pattern]: [sinon.mock(`match:${pattern}`).once(), sinon.mock(`match:${pattern}`).once(), sinon.mock(`match:${pattern}`).once()]
                     });
                     const eventEmitter = register(events, options);
 
@@ -115,7 +115,7 @@ describe('Aggregating Event Emitter', () => {
                 });
             });
 
-            it(`#${emitFunction} should call event handlers registered on all events that match with a wildcard`, async () => {
+            it(`#${emitFunction} should call event handlers registered on all events that match`, async () => {
                 const events = Object.assign(getAsEventMap(unmatchedPatterns, false), getAsEventMap(matchedPatterns, true));
                 const eventEmitter = register(events, options);
 
@@ -123,6 +123,21 @@ describe('Aggregating Event Emitter', () => {
                 sinon.verify();
             });
 
+            it(`#${emitFunction} should pass an event object to every handler that contains the name of the event that caused them to be triggered`, async () => {
+                const eventEmitter = register({
+                    'event': sinon.mock().once().withExactArgs(sinon.match({ eventName: 'event' })),
+                    'second.event': sinon.mock().once().withExactArgs(sinon.match({ eventName: 'second.event' }))
+                });
+
+                await eventEmitter[emitFunction]('event');
+                await eventEmitter[emitFunction]('second.event');
+                sinon.verify();
+            });
+        });
+    };
+
+    const testDefaultDataHandling = (...emitFunctions) => {
+        emitFunctions.forEach(emitFunction => {
             it(`#${emitFunction} should return an array of the returned values from each of the matched handlers`, async () => {
                 const eventEmitter = register({
                     'event': _.times(5, n => () => `result-${ n }`)
@@ -131,17 +146,6 @@ describe('Aggregating Event Emitter', () => {
 
                 const results = await eventEmitter[emitFunction]('event');
                 expect(results).to.deep.equal(expected);
-            });
-
-            it(`#${emitFunction} should pass an event object to every handler that contains the event that caused them to be triggered`, async () => {
-                const eventEmitter = register({
-                    'event': sinon.mock().once().withExactArgs(sinon.match({ event: 'event' })),
-                    'second.event': sinon.mock().once().withExactArgs(sinon.match({ event: 'second.event' }))
-                });
-
-                await eventEmitter[emitFunction]('event');
-                await eventEmitter[emitFunction]('second.event');
-                sinon.verify();
             });
 
             it(`#${emitFunction} should pass on any arguments passed to the event to every handler`, async () => {
@@ -158,8 +162,108 @@ describe('Aggregating Event Emitter', () => {
         });
     };
 
-    context('wildcard enabled', () => {
-        describe('#emit', () => {
+    const testWaterfallDataHandling = (...emitFunctions) => {
+        const initialiseAndStubHandlerResults = (...results) => {
+            return register({
+                event: results.map(result => (() => result))
+            });
+        };
+
+        emitFunctions.forEach(emitFunction => {
+            it(`#${emitFunction} should return the value returned by the last handler in the chain`, async () => {
+                const last = Symbol('last');
+                const events = initialiseAndStubHandlerResults(Symbol('first'), Symbol('second'), last);
+                const result = await events[emitFunction]('event');
+                expect(result).to.equal(last);
+            });
+
+            it(`#${emitFunction} should pass on all initial arguments to the first handler`, async () => {
+                const initialArguments = [Symbol(1), Symbol(2)];
+                const events = register({
+                    event: [sinon.mock('first-handler').once().withExactArgs(sinon.match.any, ...initialArguments)]
+                });
+                await events[emitFunction]('event', ...initialArguments);
+                sinon.verify();
+            });
+
+            it(`#${emitFunction} should pass on the output from the first handler as input to the second handler`, async () => {
+                const output = Symbol('output');
+                const events = register({
+                    event: [sinon.stub().returns(output), sinon.mock().withExactArgs(sinon.match.any, output)]
+                });
+                await events[emitFunction]('event', 'args');
+                sinon.verify();
+            });
+
+            it(`#${emitFunction} should pass on the original input to the second handler when the first handler returned undefined`, async () => {
+                const initialArguments = [Symbol(1), Symbol(2)];
+                const events = register({
+                    event: [sinon.stub().returns(undefined), sinon.mock().withExactArgs(sinon.match.any, ...initialArguments)]
+                });
+                await events[emitFunction]('event', ...initialArguments);
+                sinon.verify();
+            });
+
+            it(`#${emitFunction} should pass on the output value from the first handler to the third handler when the second handler returned undefined`, async () => {
+                const output = Symbol('output');
+                const events = register({
+                    event: [sinon.stub().returns(output), sinon.stub().returns(undefined), sinon.mock().withExactArgs(sinon.match.any, output)]
+                });
+                await events[emitFunction]('event', 'args');
+                sinon.verify();
+            });
+
+            it(`#${emitFunction} should pass on undefined to the second handler when the first handler returned event.continueWithUndefined`, async () => {
+                const events = register({
+                    event: [event => event.continueWithUndefined, sinon.mock().withExactArgs(sinon.match.any)]
+                });
+                await events[emitFunction]('event', 'args');
+                sinon.verify();
+            });
+
+            it(`#${emitFunction} should not call the second handler when the first handler returns event.returnUndefined`, async () => {
+                const events = register({
+                    event: [event => event.returnUndefined, sinon.mock().never()]
+                });
+                await events[emitFunction]('event', 'args');
+                sinon.verify();
+            });
+
+            it(`#${emitFunction} should not call the second handler when the first handler calls event.preventDefault`, async () => {
+                const events = register({
+                    event: [event => event.preventDefault(), sinon.mock().never()]
+                });
+                await events[emitFunction]('event', 'args');
+                sinon.verify();
+            });
+
+            it(`#${emitFunction} should return the previous returned value after a handler that calls event.preventDefault returns undefined`, async () => {
+                const expectedResult = Symbol('result');
+                const events = register({
+                    event: [sinon.stub().returns(expectedResult), event => { event.preventDefault(); return undefined; }, sinon.stub().returns(1)]
+                });
+                const result = await events[emitFunction]('event', 'args');
+                expect(result).to.equal(expectedResult);
+            });
+
+            it(`#${emitFunction} should return the value returned by the handler after the handler calls event.preventDefault`, async () => {
+                const expectedResult = Symbol('result');
+                const events = register({
+                    event: [sinon.stub().returns(1), event => { event.preventDefault(); return expectedResult; }, sinon.stub().returns(2)]
+                });
+                const result = await events[emitFunction]('event', 'args');
+                expect(result).to.equal(expectedResult);
+            });
+        });
+    };
+
+    context('data', () => {
+        testDefaultDataHandling('emit', 'emitAsync');
+        testWaterfallDataHandling('emitWaterfall', 'emitWaterfallAsync');
+    });
+
+    context('matching', () => {
+        context('wildcard enabled', () => {
             const eventName = 'some.event.name';
             const matchedPatterns = [
                 '*.event.name',
@@ -177,10 +281,8 @@ describe('Aggregating Event Emitter', () => {
 
             testMatchingPatterns(matchedPatterns, unmatchedPatterns, options, eventName);
         });
-    });
 
-    context('wildcard disabled', () => {
-        describe('#emit', () => {
+        context('wildcard disabled', () => {
             const eventName = 'event.name.with.*things*.that.would.otherwise.be.*wildcards*.*';
             const matchedPatterns = [
                 'event.name.with.*things*.that.would.otherwise.be.*wildcards*.*',
@@ -194,10 +296,8 @@ describe('Aggregating Event Emitter', () => {
 
             testMatchingPatterns(matchedPatterns, unmatchedPatterns, options, eventName);
         });
-    });
 
-    context('list-options enabled', () => {
-        describe('#emit', () => {
+        context('list-options enabled', () => {
             const eventName = 'this.event.name';
             const matchedPatterns = [
                 'this.event.name',
@@ -212,10 +312,8 @@ describe('Aggregating Event Emitter', () => {
 
             testMatchingPatterns(matchedPatterns, unmatchedPatterns, options, eventName);
         });
-    });
 
-    context('list-options disabled', () => {
-        describe('#emit', () => {
+        context('list-options disabled', () => {
             const eventName = 'this.event.name';
             const matchedPatterns = [
                 'this.event.name',
@@ -230,10 +328,8 @@ describe('Aggregating Event Emitter', () => {
 
             testMatchingPatterns(matchedPatterns, unmatchedPatterns, options, eventName);
         });
-    });
 
-    context('wildcards AND list-options enabled', () => {
-        describe('#emit', () => {
+        context('wildcards AND list-options enabled', () => {
             const eventName = 'this.event.name';
             const matchedPatterns = [
                 'this.event.name',
