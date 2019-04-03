@@ -46,7 +46,7 @@ const events = require('aggregating-event-emitter').aggregatingEventEmitter();
 events.on('my-event', (event, array) => array.map(value => value + 10));
 events.on('my-event', (event, array) => array.map(value => value * 2));
 
-const data = events.emit('my-event', [0, 5, 10]);
+const data = events.emitWaterfall('my-event', [0, 5, 10]);
 console.log(data); // [20, 30, 40]
 ```
 
