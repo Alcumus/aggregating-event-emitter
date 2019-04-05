@@ -3,11 +3,10 @@ const namedEventEmitters = {};
 
 const convertWildcardToRegex = wildcardString => new RegExp(`^${wildcardString.replace(/\*/g, '.*')}$`, 'g');
 
+const basicEventMatcher = (leftValue, rightValue) => leftValue === rightValue;
+
 const wildcardEventMatcher = (leftValue, rightValue) => {
     if (leftValue === '*' || rightValue === '*') {
-        return true;
-    }
-    if (leftValue === rightValue) {
         return true;
     }
     return convertWildcardToRegex(leftValue).test(rightValue) || convertWildcardToRegex(rightValue).test(leftValue);
@@ -25,9 +24,6 @@ const getListOptions = string => {
 };
 
 const listOptionEventMatcher = (leftValue, rightValue) => {
-    if (leftValue === rightValue) {
-        return true;
-    }
     return checkListOptions(getListOptions(leftValue), rightValue) || checkListOptions(getListOptions(rightValue), leftValue);
 };
 
@@ -44,14 +40,51 @@ const sectionFilter = _.curry((sectionMatchers, lhs, rhs) => {
 
 const getHandlers = {
     advanced: _.curry((data, filter, matchEvent) => {
-        return Object.entries(data.events)
+        const filteredEventHandlers = Object.entries(data.events)
             .filter(([event]) => filter(matchEvent, event))
-            .map(([__event, handlers]) => handlers)
-            .reduce((allHandlers, handlers) => allHandlers.concat(handlers), []);
+            .map(([__event, handlers]) => handlers);
+        if (data.lifecycles.length > 0) {
+            return filteredEventHandlers
+                .reduce((allHandlers, handlers) => {
+                    handlers.forEach((lifecycleHandlers, index) => {
+                        if (!allHandlers[index]) {
+                            allHandlers[index] = [];
+                        }
+                        allHandlers[index].push(...lifecycleHandlers);
+                    });
+                    return allHandlers;
+                }, []);
+        } else {
+            return filteredEventHandlers
+                .reduce((allHandlers, handlers) => allHandlers.concat(handlers), []);
+        }
     }),
     exact: _.curry((data, matchEvent) => {
         return data.events[matchEvent] || [];
     })
+};
+
+const getLifecycle = (event, lifecycles) => {
+    let split = event.split(':');
+    let lifecycle;
+    if (lifecycles.includes(split[0])) {
+        lifecycle = split[0];
+        split = split.slice(1);
+    } else if (lifecycles.includes('default')) {
+        lifecycle = 'default';
+    } else {
+        throw new Error(`Unable to register event handler for ${event} with no "default" lifecycle available. Available options: ${lifecycles.join(', ')}`);
+    }
+
+    if (split.length > 2) {
+        throw new Error(`Unable to register event handler for ${event}. Invalid event structure. Structure should be [lifecycle:]<eventName>[:sortOrder] where lifecycle is one of ${lifecycles.join(', ')}`);
+    }
+
+    const sortOrder = parseInt(split[1] || 0, 10);
+    if (!_.isFinite(sortOrder)) {
+        throw new Error(`Unable to register event handler for ${event}. Invalid event structure. Structure should be [lifecycle:]<eventName>[:sortOrder] where lifecycle is one of ${lifecycles.join(', ')}`);
+    }
+    return [lifecycle, split[0], sortOrder];
 };
 
 const eventRegistrars = {
@@ -60,24 +93,80 @@ const eventRegistrars = {
             data.events[event] = [];
         }
         data.events[event].push(handler);
+    }),
+    lifecycles: _.curry((data, event, handler) => {
+        const [lifecycle, eventName, sortOrder] = getLifecycle(event, data.lifecycles);
+        const lifecycleEventsPath = [eventName, data.lifecycles.indexOf(lifecycle)];
+        const lifecycleEvents = _.get(data.events, lifecycleEventsPath, []);
+        if (lifecycleEvents.length === 0) {
+            _.set(data.events, lifecycleEventsPath, lifecycleEvents);
+        }
+        handler.sortOrder = sortOrder;
+        lifecycleEvents.push(handler);
+        lifecycleEvents.sort((leftHandler, rightHandler) => leftHandler.sortOrder - rightHandler.sortOrder);
     })
 };
 
-const eventEmitter = ({ getHandlers, registerEventHandler }) => {
+const eventEmitter = ({ data, getHandlers, registerEventHandler }) => {
     const getEventObject = eventName => {
         const meta = {
             action: 'continue'
         };
         return {
             meta,
+            lifecycles: data.lifecycles,
             handlers: getHandlers(eventName),
             eventObject: Object.freeze({
                 eventName,
                 continueWithUndefined: Symbol('continue-with-undefined'),
                 returnUndefined: Symbol('return-undefined'),
-                preventDefault: () => meta.action = 'return'
+                preventDefault: () => meta.action = 'return',
+                lifecycles: {}
             })
         };
+    };
+
+    const useLifecycles = data.lifecycles.length > 0;
+
+    const emitBasic = (event, ...args) => {
+        const { handlers, eventObject } = getEventObject(event);
+        return handlers.map(handler => handler(eventObject, ...args));
+    };
+
+    const emitLifecycles = (event, ...args) => {
+        const { lifecycles, handlers, eventObject } = getEventObject(event);
+        return lifecycles.map((lifecycleName, lifecycleIndex) => {
+            const lifecycle = handlers[lifecycleIndex];
+            if (!lifecycle || lifecycle.length === 0) {
+                return [];
+            }
+            return lifecycle.map((handler, handlerIndex) => {
+                const result = handler(eventObject, ...args);
+                _.set(eventObject.lifecycles, [lifecycleName, handlerIndex], result);
+                return result;
+            });
+        });
+    };
+
+    const emitcAsyncBasic = async (event, ...args) => {
+        const { handlers, eventObject } = getEventObject(event);
+        return await Promise.all(handlers.map(async (handler) => await handler(eventObject, ...args)));
+    };
+
+    const emitAsyncLifecycles = async (event, ...args) => {
+        const { lifecycles, handlers, eventObject } = getEventObject(event);
+        const results = [];
+        for (const [lifecycleIndex, lifecycleName] of lifecycles.entries()) {
+            const lifecycleHandlers = handlers[lifecycleIndex];
+            if (!lifecycleHandlers) {
+                results[lifecycleIndex] = [];
+                continue;
+            }
+            const lifecycleResults = await Promise.all(lifecycleHandlers.map(async (handler) => await handler(eventObject, ...args)));
+            eventObject.lifecycles[lifecycleName] = lifecycleResults;
+            results[lifecycleIndex] = lifecycleResults;
+        }
+        return results;
     };
 
     /**
@@ -89,10 +178,7 @@ const eventEmitter = ({ getHandlers, registerEventHandler }) => {
      * @param {...*} [args] Any number of arguments to pass to all event handlers.
      * @returns {array} An array of all the values returned by event handlers in the order they were executed.
      */
-    const emit = (event, ...args) => {
-        const { handlers, eventObject } = getEventObject(event);
-        return handlers.map(handler => handler(eventObject, ...args));
-    };
+    const emit = useLifecycles ? emitLifecycles : emitBasic;
 
     /**
      * Emit an event asynchronously. This emit will execute all matching handlers concurrently (in parallel) and return an
@@ -104,10 +190,7 @@ const eventEmitter = ({ getHandlers, registerEventHandler }) => {
      * @param {...*} [args] Any number of arguments to pass to all event handlers.
      * @returns {Promise<array>} A Promise that will resolve to an array of all the values returned by the event handlers in the order they were matched.
      */
-    const emitAsync = async (event, ...args) => {
-        const { handlers, eventObject } = getEventObject(event);
-        return await Promise.all(handlers.map(async (handler) => await handler(eventObject, ...args)));
-    };
+    const emitAsync = useLifecycles ? emitAsyncLifecycles : emitcAsyncBasic;
 
     const updateWaterfallMetaData = ({ meta, eventObject }) => {
         switch (meta.lastResult) {
@@ -142,7 +225,10 @@ const eventEmitter = ({ getHandlers, registerEventHandler }) => {
     const emitWaterfall = (event, ...args) => {
         const { handlers, eventObject, meta } = getEventObject(event);
         meta.nextInput = args;
-        for (const handler of handlers) {
+        for (const handler of _.flatten(handlers)) {
+            if (!handler) {
+                continue;
+            }
             meta.lastResult = handler(eventObject, ...meta.nextInput);
             updateWaterfallMetaData({ meta, eventObject });
             if (meta.action === 'return') {
@@ -165,7 +251,10 @@ const eventEmitter = ({ getHandlers, registerEventHandler }) => {
     const emitWaterfallAsync = async (event, ...args) => {
         const { handlers, eventObject, meta } = getEventObject(event);
         meta.nextInput = args;
-        for (const handler of handlers) {
+        for (const handler of _.flatten(handlers)) {
+            if (!handler) {
+                continue;
+            }
             meta.lastResult = await handler(eventObject, ...meta.nextInput);
             updateWaterfallMetaData({ meta, eventObject });
             if (meta.action === 'return') {
@@ -208,30 +297,46 @@ const eventEmitter = ({ getHandlers, registerEventHandler }) => {
  * @type {object}
  * @property {boolean} [wildcards=false] Whether or not to enable wildcard matching in event names (e.g., "data.*" to match "data.get").
  * @property {boolean} [listOptions=false] Whether or not to enable list option matching in event names. (e.g., "data.{get,set}" to match both "data.get" and "data.set").
- * @property {boolean|array} [hooks=false] <p>False to disable hooks, or an array to specify lifecycle hooks (in order) to allow handlers to register against.
+ * @property {boolean|array} [lifecycles=false] <p>False to disable lifecycles, or an array to specify lifecycle options (in order) to allow handlers to register against.
  *     E.g., if passing in ['first', 'before', 'default' 'after', 'last'] any handler registered as "namespace.event" will be in the "default" lifecycle, which will happen
  *     after those registered as "first:namespace.event" or "before:namespace.event".</p><p>If a "default" is not provided, an error will be raised if any handler is registered
  *     without a lifecycle marker. If the value true is provided instead of an array, the default lifecycles will be used (["early", "before", "default", "after", "late"]).</p><p>NOT YET IMPLEMENTED</p>
  */
-const configureEventEmitter = ({ wildcards = false, listOptions = false, hooks = false }) => {
+const configureEventEmitter = ({ wildcards = false, listOptions = false, lifecycles = false }) => {
     const data = {
         cache: {},
-        events: {}
+        events: {},
+        lifecycles: []
     };
 
     const options = {
         getHandlers: getHandlers.exact(data),
-        registerEventHandler: eventRegistrars.basic(data)
+        registerEventHandler: eventRegistrars.basic(data),
+        data,
+        useAdvancedMatcher: false
     };
-    const sectionMatchers = [];
+    const sectionMatchers = [basicEventMatcher];
     if (wildcards) {
         sectionMatchers.push(wildcardEventMatcher);
     }
     if (listOptions) {
         sectionMatchers.push(listOptionEventMatcher);
     }
+    if (sectionMatchers.length > 1) {
+        options.useAdvancedMatcher = true;
+    }
 
-    if (sectionMatchers.length > 0) {
+    if (lifecycles) {
+        if (_.isArray(lifecycles)) {
+            data.lifecycles = lifecycles;
+        } else {
+            data.lifecycles = ['early', 'before', 'default', 'after', 'late'];
+        }
+        options.registerEventHandler = eventRegistrars.lifecycles(data);
+        options.useAdvancedMatcher = true;
+    }
+
+    if (options.useAdvancedMatcher) {
         options.getHandlers = getHandlers.advanced(data, sectionFilter(sectionMatchers));
     }
     return eventEmitter(options);
