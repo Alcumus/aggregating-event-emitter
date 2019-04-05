@@ -10,11 +10,11 @@ Assertion.addMethod('minimumOps', function(minimumOps) {
     const actual = _.isArray(this._obj) ? this._obj : [this._obj];
     const failingTests = actual
         .filter(testResult => testResult.ops < minimumOps)
-        .map(test => `${test.name} (${test.ops})`);
+        .map(test => `${test.name} (${test.ops.toLocaleString()})`);
 
     this.assert(
         failingTests.length === 0,
-        `expected all test results in ${util.inspect(actual)} to have at least ${minimumOps} operations per second. Failing tests: ${failingTests.join(', ')}`
+        `expected all test results in ${util.inspect(actual)} to have at least ${minimumOps.toLocaleString()} operations per second. Failing tests: ${failingTests.join(', ')}`
     );
 });
 
@@ -57,7 +57,34 @@ describe('NFR performance tests', function() {
         describe('#emit', () => {
             it('single unmatched handler', () => {
                 return runEventEmitterTestSuite({
-                    name: 'emit-with-wildcards',
+                    name: 'emit-without-matches',
+                    eventHandlers: {
+                        unmatched: () => {}
+                    },
+                    tests: {
+                        'emit 1 level event': (eventEmitter) => eventEmitter.emit('event'),
+                        'emit 1 level wildcard': (eventEmitter) => eventEmitter.emit('ev*'),
+                        'emit 2 level event': (eventEmitter) => eventEmitter.emit('event.two'),
+                        'emit 2 level wildcard': (eventEmitter) => eventEmitter.emit('*.event'),
+                        'emit 3 level event': (eventEmitter) => eventEmitter.emit('event.with.more'),
+                        'emit 3 level wildcard': (eventEmitter) => eventEmitter.emit('event.*.more')
+                    }
+                })
+                    .then(tests => {
+                        const million = 1e6;
+                        expect(tests).to.have.minimumOps(2 * million);
+                    });
+            });
+
+            it('single matched handler', () => {
+                return runEventEmitterTestSuite({
+                    name: 'emit-with-match',
+                    eventHandlers: {
+                        event: () => {},
+                        'event.two': () => {},
+                        'some.event': () => {},
+                        'event.with.more': () => {}
+                    },
                     tests: {
                         'emit 1 level event': (eventEmitter) => eventEmitter.emit('event'),
                         'emit 1 level wildcard': (eventEmitter) => eventEmitter.emit('ev*'),
