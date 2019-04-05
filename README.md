@@ -52,3 +52,7 @@ console.log(data); // [20, 30, 40]
 
 Be aware that it's fully possible for one handler to break the data structure for another handler if you are not careful when
 using the waterfall functions. In order to mitigate this, it may be worth using hooks to ensure the order is appropriate.
+
+# API
+
+The API docs are [available here]('https://alcumus.github.io/aggregating-event-emitter/').
