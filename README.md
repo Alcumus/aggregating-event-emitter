@@ -55,4 +55,4 @@ using the waterfall functions. In order to mitigate this, it may be worth using 
 
 # API
 
-The API docs are [available here]('https://alcumus.github.io/aggregating-event-emitter/').
+The API docs are available here: https://alcumus.github.io/aggregating-event-emitter/
