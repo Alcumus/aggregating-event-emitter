@@ -213,7 +213,7 @@ const eventEmitter = ({ getHandlers, registerEventHandler }) => {
  *     after those registered as "first:namespace.event" or "before:namespace.event".</p><p>If a "default" is not provided, an error will be raised if any handler is registered
  *     without a lifecycle marker. If the value true is provided instead of an array, the default lifecycles will be used (["early", "before", "default", "after", "late"]).</p><p>NOT YET IMPLEMENTED</p>
  */
-const configureEventEmitter = ({ wildcards = false, listOptions = false, hooks = false }) => {
+const configureEventEmitter = ({ wildcards = false, listOptions = false }) => {
     const data = {
         cache: {},
         events: {}
