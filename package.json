@@ -5,7 +5,7 @@
   "main": "src/index.js",
   "scripts": {
     "build-docs": "jsdoc src/event-emitter.js README.md --destination docs",
-    "test": "mocha 'test/**/*.test.js'",
+    "test": "mocha --forbid-only 'test/**/*.test.js'",
     "lint": "eslint 'src/**/*.js' 'test/**/*.js'",
     "watch": "nodemon --ext ts,html,scss,js,json --exec \"npm run lint || exit 1\"",
     "fix": "eslint \"src/**/*.js\" \"test/**/*.js\" \"*.js\" --fix && stylelint \"src/**/*.scss\" \"*.scss\" --fix"
