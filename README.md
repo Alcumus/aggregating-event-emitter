@@ -10,7 +10,7 @@ In addition to this it has useful features like wildcard matching and list item 
 ### Installation
 
 ```sh
-npm install aggregating-event-emitter
+npm i @alcumus/aggregating-event-emitter
 ```
 
 ### Usage examples
