@@ -209,6 +209,17 @@ const eventEmitter = ({ data, getHandlers, registerEventHandler }) => {
         }
     };
 
+    const serialiseHandlers = handlers => {
+        return handlers.reduce((accumulator, handler) => {
+            if (typeof handler === 'function') {
+                accumulator.push(handler);
+            } else if (handler && handler.length > 0) {
+                accumulator.push(...handler);
+            }
+            return accumulator;
+        }, []);
+    };
+
     /**
      * Emit an event synchronously and in order where the output of each handler in the chain becomes the input to the next.
      * The exception to this rule is that returning undefined from a handler will be interpreted as "leave the data unchanged".
@@ -225,10 +236,7 @@ const eventEmitter = ({ data, getHandlers, registerEventHandler }) => {
     const emitWaterfall = (event, ...args) => {
         const { handlers, eventObject, meta } = getEventObject(event);
         meta.nextInput = args;
-        for (const handler of _.flatten(handlers)) {
-            if (!handler) {
-                continue;
-            }
+        for (const handler of serialiseHandlers(handlers)) {
             meta.lastResult = handler(eventObject, ...meta.nextInput);
             updateWaterfallMetaData({ meta, eventObject });
             if (meta.action === 'return') {
@@ -251,10 +259,7 @@ const eventEmitter = ({ data, getHandlers, registerEventHandler }) => {
     const emitWaterfallAsync = async (event, ...args) => {
         const { handlers, eventObject, meta } = getEventObject(event);
         meta.nextInput = args;
-        for (const handler of _.flatten(handlers)) {
-            if (!handler) {
-                continue;
-            }
+        for (const handler of serialiseHandlers(handlers)) {
             meta.lastResult = await handler(eventObject, ...meta.nextInput);
             updateWaterfallMetaData({ meta, eventObject });
             if (meta.action === 'return') {
