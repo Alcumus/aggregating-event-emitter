@@ -3,6 +3,7 @@
 const _ = require('lodash');
 const expect = require('chai').expect;
 const sinon = require('sinon');
+const assert = require('assert');
 const { aggregatingEventEmitter, AggregatingEventEmitter, ...eventEmitter } = require('../src/event-emitter');
 
 describe('Aggregating Event Emitter', () => {
@@ -125,8 +126,8 @@ describe('Aggregating Event Emitter', () => {
 
             it(`#${emitFunction} should pass an event object to every handler that contains the name of the event that caused them to be triggered`, async () => {
                 const eventEmitter = register({
-                    'event': sinon.mock().once().withExactArgs(sinon.match({ eventName: 'event' })),
-                    'second.event': sinon.mock().once().withExactArgs(sinon.match({ eventName: 'second.event' }))
+                    'event': sinon.mock('event-handler').once().withExactArgs(sinon.match({ eventName: 'event' })),
+                    'second.event': sinon.mock('second.event-handler').once().withExactArgs(sinon.match({ eventName: 'second.event' }))
                 });
 
                 await eventEmitter[emitFunction]('event');
@@ -151,8 +152,8 @@ describe('Aggregating Event Emitter', () => {
             it(`#${emitFunction} should pass on any arguments passed to the event to every handler`, async () => {
                 const args = [1, 2, 3];
                 const eventEmitter = register({
-                    'event': sinon.mock().once().withExactArgs(sinon.match.any, ...args),
-                    'second.event': sinon.mock().once().withExactArgs(sinon.match.any, ...args)
+                    'event': sinon.mock('event-handler').once().withExactArgs(sinon.match.any, ...args),
+                    'second.event': sinon.mock('second.event-handler').once().withExactArgs(sinon.match.any, ...args)
                 });
 
                 await eventEmitter[emitFunction]('event', ...args);
@@ -189,7 +190,7 @@ describe('Aggregating Event Emitter', () => {
             it(`#${emitFunction} should pass on the output from the first handler as input to the second handler`, async () => {
                 const output = Symbol('output');
                 const events = register({
-                    event: [sinon.stub().returns(output), sinon.mock().withExactArgs(sinon.match.any, output)]
+                    event: [() => output, sinon.mock('input-confirmation-handler').withExactArgs(sinon.match.any, output)]
                 });
                 await events[emitFunction]('event', 'args');
                 sinon.verify();
@@ -198,7 +199,7 @@ describe('Aggregating Event Emitter', () => {
             it(`#${emitFunction} should pass on the original input to the second handler when the first handler returned undefined`, async () => {
                 const initialArguments = [Symbol(1), Symbol(2)];
                 const events = register({
-                    event: [sinon.stub().returns(undefined), sinon.mock().withExactArgs(sinon.match.any, ...initialArguments)]
+                    event: [() => undefined, sinon.mock('input-confirmation-handler').withExactArgs(sinon.match.any, ...initialArguments)]
                 });
                 await events[emitFunction]('event', ...initialArguments);
                 sinon.verify();
@@ -207,7 +208,7 @@ describe('Aggregating Event Emitter', () => {
             it(`#${emitFunction} should pass on the output value from the first handler to the third handler when the second handler returned undefined`, async () => {
                 const output = Symbol('output');
                 const events = register({
-                    event: [sinon.stub().returns(output), sinon.stub().returns(undefined), sinon.mock().withExactArgs(sinon.match.any, output)]
+                    event: [() => output, () => undefined, sinon.mock('input-confirmation-handler').withExactArgs(sinon.match.any, output)]
                 });
                 await events[emitFunction]('event', 'args');
                 sinon.verify();
@@ -215,7 +216,7 @@ describe('Aggregating Event Emitter', () => {
 
             it(`#${emitFunction} should pass on undefined to the second handler when the first handler returned event.continueWithUndefined`, async () => {
                 const events = register({
-                    event: [event => event.continueWithUndefined, sinon.mock().withExactArgs(sinon.match.any)]
+                    event: [event => event.continueWithUndefined, sinon.mock('input-confirmation-handler').withExactArgs(sinon.match.any)]
                 });
                 await events[emitFunction]('event', 'args');
                 sinon.verify();
@@ -223,7 +224,7 @@ describe('Aggregating Event Emitter', () => {
 
             it(`#${emitFunction} should not call the second handler when the first handler returns event.returnUndefined`, async () => {
                 const events = register({
-                    event: [event => event.returnUndefined, sinon.mock().never()]
+                    event: [event => event.returnUndefined, sinon.mock('skipped-handler').never()]
                 });
                 await events[emitFunction]('event', 'args');
                 sinon.verify();
@@ -231,7 +232,7 @@ describe('Aggregating Event Emitter', () => {
 
             it(`#${emitFunction} should not call the second handler when the first handler calls event.preventDefault`, async () => {
                 const events = register({
-                    event: [event => event.preventDefault(), sinon.mock().never()]
+                    event: [event => event.preventDefault(), sinon.mock('skipped-handler').never()]
                 });
                 await events[emitFunction]('event', 'args');
                 sinon.verify();
@@ -240,7 +241,7 @@ describe('Aggregating Event Emitter', () => {
             it(`#${emitFunction} should return the previous returned value after a handler that calls event.preventDefault returns undefined`, async () => {
                 const expectedResult = Symbol('result');
                 const events = register({
-                    event: [sinon.stub().returns(expectedResult), event => { event.preventDefault(); return undefined; }, sinon.stub().returns(1)]
+                    event: [() => expectedResult, event => { event.preventDefault(); return undefined; }, () => 1]
                 });
                 const result = await events[emitFunction]('event', 'args');
                 expect(result).to.equal(expectedResult);
@@ -249,7 +250,7 @@ describe('Aggregating Event Emitter', () => {
             it(`#${emitFunction} should return the value returned by the handler after the handler calls event.preventDefault`, async () => {
                 const expectedResult = Symbol('result');
                 const events = register({
-                    event: [sinon.stub().returns(1), event => { event.preventDefault(); return expectedResult; }, sinon.stub().returns(2)]
+                    event: [() => 1, event => { event.preventDefault(); return expectedResult; }, () => 2]
                 });
                 const result = await events[emitFunction]('event', 'args');
                 expect(result).to.equal(expectedResult);
@@ -285,7 +286,7 @@ describe('Aggregating Event Emitter', () => {
         context('wildcard disabled', () => {
             const eventName = 'event.name.with.*things*.that.would.otherwise.be.*wildcards*.*';
             const matchedPatterns = [
-                'event.name.with.*things*.that.would.otherwise.be.*wildcards*.*',
+                'event.name.with.*things*.that.would.otherwise.be.*wildcards*.*'
             ];
             const unmatchedPatterns = [
                 'simple.event',
@@ -316,7 +317,7 @@ describe('Aggregating Event Emitter', () => {
         context('list-options disabled', () => {
             const eventName = 'this.event.name';
             const matchedPatterns = [
-                'this.event.name',
+                'this.event.name'
             ];
             const unmatchedPatterns = [
                 '{this,that,some}.event.name',
@@ -325,6 +326,42 @@ describe('Aggregating Event Emitter', () => {
                 'this.*.name'
             ];
             const options = { listOptions: false };
+
+            testMatchingPatterns(matchedPatterns, unmatchedPatterns, options, eventName);
+        });
+
+        context('lifecycles enabled', () => {
+            const eventName = 'event.name';
+            const matchedPatterns = [
+                'early:event.name',
+                'before:event.name',
+                'event.name',
+                'after:event.name',
+                'late:event.name'
+            ];
+            const unmatchedPatterns = [
+                '*.event.name',
+                'before.event.name'
+            ];
+            const options = { lifecycles: true };
+
+            testMatchingPatterns(matchedPatterns, unmatchedPatterns, options, eventName);
+        });
+
+        context('custom lifecycles enabled', () => {
+            const eventName = 'event.name';
+            const matchedPatterns = [
+                'one:event.name',
+                'two:event.name',
+                'event.name',
+                'three:event.name',
+                'four:event.name'
+            ];
+            const unmatchedPatterns = [
+                '*.event.name',
+                'one.event.name'
+            ];
+            const options = { lifecycles: ['one', 'two', 'default', 'three', 'four'] };
 
             testMatchingPatterns(matchedPatterns, unmatchedPatterns, options, eventName);
         });
@@ -346,6 +383,310 @@ describe('Aggregating Event Emitter', () => {
             const options = { wildcards: true, listOptions: true };
 
             testMatchingPatterns(matchedPatterns, unmatchedPatterns, options, eventName);
+        });
+    });
+
+    context('custom lifecycles AND wildcards AND list-options enabled', () => {
+        const eventName = 'event.name';
+        const matchedPatterns = [
+            'one:event.name',
+            'two:event.name',
+            'event.name',
+            'three:event.name',
+            'four:event.name',
+            'event.*',
+            '*.name',
+            'one:*.name',
+            'three:event.{name,test}'
+        ];
+        const unmatchedPatterns = [
+            '*.event.name',
+            'one.event.name'
+        ];
+        const options = {
+            wildcards: true,
+            listOptions: true,
+            lifecycles: ['one', 'two', 'default', 'three', 'four']
+        };
+
+        testMatchingPatterns(matchedPatterns, unmatchedPatterns, options, eventName);
+    });
+
+    context('lifecycles', () => {
+        describe('#on', () => {
+            it('should allow : as part of event name when lifecycles are disabled', () => {
+                const events = register({
+                    'my:event': [sinon.mock('basic-event-handler').once()]
+                }, { lifecycles: false });
+                events.emit('my:event');
+                sinon.verify();
+            });
+
+            it('should throw an error if an invalid lifecycle event is used before : in the event name when lifecycles are enabled', () => {
+                try {
+                    register({
+                        'invalid:event': [() => {}]
+                    }, { lifecycles: true });
+                    assert.fail('Registering event should have failed');
+                } catch (error) {
+                    expect(error.message).to.include('Unable to register event handler');
+                }
+            });
+
+            it('should allow the default set of lifecycles if lifecycles is set to true', () => {
+                const registeredLifecycles = ['early:', 'before:', '', 'after:', 'late:'];
+                const registerHandlers = {};
+                registeredLifecycles.forEach(lifecycle => {
+                    registerHandlers[`${lifecycle}event`] = [() => {}];
+                });
+                register(registerHandlers, { lifecycles: true });
+            });
+
+            it('should allow the specified set of lifecycles if lifecycles is an array of strings', () => {
+                const registeredLifecycles = ['x:', 'y:', 'z:'];
+                const registerHandlers = {};
+                registeredLifecycles.forEach(lifecycle => {
+                    registerHandlers[`${lifecycle}event`] = [() => {}];
+                });
+                register(registerHandlers, { lifecycles: ['x', 'y', 'z'] });
+            });
+
+            it('should allow not specifying a lifecycle if "default" is one of the lifecycle options', () => {
+                const registeredLifecycles = ['', 'x:', 'y:', 'z:'];
+                const registerHandlers = {};
+                registeredLifecycles.forEach(lifecycle => {
+                    registerHandlers[`${lifecycle}event`] = [() => {}];
+                });
+                register(registerHandlers, { lifecycles: ['default', 'x', 'y', 'z'] });
+            });
+
+            it('should throw an error if no lifecycle is specified and "default" is not one of the lifecycle options', () => {
+                const registeredLifecycles = ['', 'x:', 'y:', 'z:'];
+                const registerHandlers = {};
+                registeredLifecycles.forEach(lifecycle => {
+                    registerHandlers[`${lifecycle}event`] = [() => {}];
+                });
+                try {
+                    register(registerHandlers, { lifecycles: ['x', 'y', 'z'] });
+                    assert.fail('Registering event should have failed');
+                } catch (error) {
+                    expect(error.message).to.include('Unable to register event handler');
+                }
+            });
+
+            it('should throw an error if there are more than two colons in the event', () => {
+                try {
+                    register({
+                        'before:event:2:error': [() => {}]
+                    }, { lifecycles: true });
+                    assert.fail('Registering event should have failed');
+                } catch (error) {
+                    expect(error.message).to.include('Unable to register event handler');
+                }
+            });
+
+            it('should throw an error if there is more than one colon in the event and the first section is not a lifecycle', () => {
+                try {
+                    register({
+                        'event:2:error': [() => {}]
+                    }, { lifecycles: true });
+                    assert.fail('Registering event should have failed');
+                } catch (error) {
+                    expect(error.message).to.include('Unable to register event handler');
+                }
+            });
+
+            it('should throw an error if the order value in the event name is not an integer', () => {
+                try {
+                    register({
+                        'event:error': [() => {}]
+                    }, { lifecycles: true });
+                    assert.fail('Registering event should have failed');
+                } catch (error) {
+                    expect(error.message).to.include('Unable to register event handler');
+                }
+            });
+
+            it('should sort event handlers by the number provided after the second colon when present', () => {
+                const expectedOrder = _.times(5, n => sinon.mock(`handler #${n}`).once());
+                const events = register({
+                    'event:0': [expectedOrder[2], expectedOrder[3]],
+                    'event:-5': [expectedOrder[1]],
+                    'event:12': [expectedOrder[4]],
+                    'event:-99': [expectedOrder[0]]
+                }, { lifecycles: true });
+                events.emit('event');
+                sinon.verify();
+                expect(
+                    expectedOrder.every((handler, index) => index > 0 ? handler.calledAfter(expectedOrder[index - 1]) : true),
+                    'Handlers called in the wrong order'
+                ).to.equal(true);
+            });
+
+            it('should treat event handlers with no order value as having 0 as the order value', () => {
+                const expectedOrder = _.times(3, n => sinon.mock(`handler #${n}`).once());
+                const events = register({
+                    event: [expectedOrder[1]],
+                    'event:-1': [expectedOrder[0]],
+                    'event:1': [expectedOrder[2]]
+                }, { lifecycles: true });
+                events.emit('event');
+                sinon.verify();
+                expect(
+                    expectedOrder.every((handler, index) => index > 0 ? handler.calledAfter(expectedOrder[index - 1]) : true),
+                    'Handlers called in the wrong order'
+                ).to.equal(true);
+            });
+
+            it('should treat "event:10" as a short form of "default:event:10"', () => {
+                const expectedOrder = _.times(3, n => sinon.mock(`handler #${n}`).once());
+                const events = register({
+                    'event:10': [expectedOrder[1]],
+                    'default:event:9': [expectedOrder[0]],
+                    'default:event:11': [expectedOrder[2]]
+                }, { lifecycles: true });
+                events.emit('event');
+                sinon.verify();
+                expect(
+                    expectedOrder.every((handler, index) => index > 0 ? handler.calledAfter(expectedOrder[index - 1]) : true),
+                    'Handlers called in the wrong order'
+                ).to.equal(true);
+            });
+        });
+
+        const commonLifecycleTests = emitFunction => {
+            it('should execute all entries in the first lifecycle before those in the second', async () => {
+                const first = _.times(3, n => sinon.mock(`handler #${n}`).once());
+                const second = _.times(3, n => sinon.mock(`handler #${n}`).once());
+                const events = register({
+                    'second:event': second,
+                    'first:event': first
+                }, { lifecycles: ['first', 'second' ]});
+                await events[emitFunction]('event');
+                sinon.verify();
+                expect(
+                    second.every((handler) => first.every(firstHandler => handler.calledAfter(firstHandler))),
+                    'Handlers called in the wrong order'
+                ).to.equal(true);
+            });
+
+            it('should execute all entries in the second lifecycle before those in the third', async () => {
+                const first = _.times(3, n => sinon.mock(`handler #${n}`).once());
+                const second = _.times(3, n => sinon.mock(`handler #${n}`).once());
+                const third = _.times(3, n => sinon.mock(`handler #${n}`).once());
+                const events = register({
+                    'second:event': second,
+                    'third:event': third,
+                    'first:event': first
+                }, { lifecycles: ['first', 'second', 'third' ]});
+                await events[emitFunction]('event');
+                sinon.verify();
+                expect(
+                    third.every((handler) => second.every(secondHandler => handler.calledAfter(secondHandler))),
+                    'Handlers called in the wrong order'
+                ).to.equal(true);
+            });
+
+            it('should execute functions in the order they\'ve been added within the same lifecycle', async () => {
+                const expectedOrder = _.times(3, n => sinon.mock(`handler #${n}`).once());
+                const events = register({
+                    'before:event': expectedOrder,
+                }, { lifecycles: true });
+                await events[emitFunction]('event');
+                sinon.verify();
+                expect(
+                    expectedOrder.every((handler, index) => index > 0 ? handler.calledAfter(expectedOrder[index - 1]) : true),
+                    'Handlers called in the wrong order'
+                ).to.equal(true);
+            });
+
+            it('should return data as an array where each entry is the array of results from event handlers in that lifecycle entry', async () => {
+                const events = register({
+                    'early:event': [() => -1],
+                    'before:event:1': [() => 2],
+                    'before:event': [() => 1],
+                    'before:event:-1': [() => 0],
+                    'event:1': [() => 3],
+                    'event': [() => 2],
+                    'event:-1': [() => 1],
+                    'after:event:1': [() => 4],
+                    'after:event': [() => 3],
+                    'after:event:-1': [() => 2],
+                    'late:event': [() => -1]
+                }, { lifecycles: true });
+                const result = await events[emitFunction]('event');
+                expect(result).to.deep.equal([
+                    [-1],
+                    [0, 1, 2],
+                    [1, 2, 3],
+                    [2, 3, 4],
+                    [-1]
+                ]);
+            });
+
+            it('should return an empty array for lifecycles with no handlers', async () => {
+                const events = register({
+                    'before:event': [() => 1],
+                    'after:event': [() => 1],
+                }, { lifecycles: true });
+                const result = await events[emitFunction]('event');
+                expect(result).to.deep.equal([
+                    [],
+                    [1],
+                    [],
+                    [1],
+                    []
+                ]);
+            });
+
+            it('should provide access to the results from the previous lifecycle(s) on the event object as event.lifecycles[lifecycle]', async () => {
+                const events = register({
+                    'before:event': [() => 1, () => 2],
+                    event: [sinon.mock('on:event').once().withExactArgs(sinon.match({
+                        lifecycles: sinon.match({
+                            before: [1, 2]
+                        })
+                    }))],
+                }, { lifecycles: true });
+                await events[emitFunction]('event');
+                sinon.verify();
+            });
+        };
+
+        describe('#emit', () => {
+            commonLifecycleTests('emit');
+        });
+
+        describe('#emitAsync', () => {
+            commonLifecycleTests('emitAsync');
+        });
+
+        const testWaterfallLifecycles = emitFunction => {
+            describe(`#${emitFunction}`, () => {
+                it('should execute handlers first by order of lifecycle, then in order within the lifecycles', () => {
+                    const expectedOrder = _.times(5, n => sinon.mock(`handler #${n}`).once());
+                    const events = register({
+                        'first:event:0': [expectedOrder[1], expectedOrder[2]],
+                        'first:event:-5': [expectedOrder[0]],
+                        'second:event:12': [expectedOrder[4]],
+                        'second:event:-99': [expectedOrder[3]]
+                    }, { lifecycles: ['first', 'second'] });
+                    events.emit('event');
+                    sinon.verify();
+                    expect(
+                        expectedOrder.every((handler, index) => index > 0 ? handler.calledAfter(expectedOrder[index - 1]) : true),
+                        'Handlers called in the wrong order'
+                    ).to.equal(true);
+                });
+            });
+        };
+
+        describe('#emitWaterfall', () => {
+            testWaterfallLifecycles('emitWaterfall');
+        });
+
+        describe('#emitWaterfallAsync', () => {
+            testWaterfallLifecycles('emitWaterfallAsync');
         });
     });
 });

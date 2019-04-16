@@ -1,6 +1,6 @@
 {
   "name": "@alcumus/aggregating-event-emitter",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "An event emitter that provides both normal event emitting functionality as well as the ability to aggregate results of calling the event handlers. For example you can use emitAsync to receive an array of the results of all the event handlers that were triggered or emitAsyncWaterfall to process the arguments in series and get the result returned at the end.",
   "main": "src/index.js",
   "publishConfig": {
@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build-docs": "jsdoc src/event-emitter.js README.md --destination docs",
-    "test": "mocha 'test/**/*.test.js'",
+    "test": "mocha --forbid-only 'test/**/*.test.js'",
     "lint": "eslint 'src/**/*.js' 'test/**/*.js'",
     "watch": "nodemon --ext ts,html,scss,js,json --exec \"npm run lint || exit 1\"",
     "fix": "eslint \"src/**/*.js\" \"test/**/*.js\" \"*.js\" --fix && stylelint \"src/**/*.scss\" \"*.scss\" --fix"
