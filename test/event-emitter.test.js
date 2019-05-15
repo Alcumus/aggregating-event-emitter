@@ -688,5 +688,118 @@ describe('Aggregating Event Emitter', () => {
         describe('#emitWaterfallAsync', () => {
             testWaterfallLifecycles('emitWaterfallAsync');
         });
+
+        describe('#race', () => {
+            let clock;
+            let originalSetImmediate;
+
+            beforeEach(() => {
+                originalSetImmediate = setImmediate;
+                clock = sinon.useFakeTimers();
+            });
+
+            const raceHandler = (delay, result) => {
+                const promise = new Promise((resolve, reject) => {
+                    setTimeout(() => {
+                        if (result instanceof Error) {
+                            reject(result);
+                        } else {
+                            resolve(result);
+                        }
+                    }, delay);
+                });
+                const mock = sinon.mock().returns(promise);
+                mock.delay = delay;
+                return mock;
+            };
+
+            const testRace = async ({ event, handlers, maxTimeToProgress = Infinity, options }) => {
+                const events = register({
+                    [event]: handlers
+                }, options);
+                const promise = events.race(event);
+                const completionOrder = [...handlers];
+                completionOrder.sort((lhs, rhs) => lhs.delay - rhs.delay);
+                const triggerResolves = ([handler, ...array], currentDelay) => {
+                    if (!handler) {
+                        return;
+                    }
+                    const targetDelay = Math.min(maxTimeToProgress, handler.delay);
+                    clock.tick(targetDelay - currentDelay);
+                    originalSetImmediate(triggerResolves, array, targetDelay);
+                };
+                originalSetImmediate(triggerResolves, completionOrder, 0);
+                return promise;
+            };
+
+            it('should execute all handlers and return undefined if none of the handlers return a value', async () => {
+                const handlers = _.times(5, n => raceHandler(20 - n * 2));
+                const result = await testRace({
+                    event: 'events',
+                    handlers
+                });
+                expect(result).to.equal(undefined);
+            });
+
+            it('should return the value returned by the last handler when only it returns a value', async () => {
+                const handlers = _.times(5, n => raceHandler(20 - n * 2, n === 0 ? 1 : undefined));
+                handlers[handlers.length - 1].returns(1);
+                const result = await testRace({
+                    event: 'events',
+                    handlers
+                });
+                expect(result).to.equal(1);
+            });
+
+            it('should return the value returned by the first handler when all handlers return a value', async () => {
+                const handlers = _.times(5, n => raceHandler(20 - n * 2, n));
+                const result = await testRace({
+                    event: 'events',
+                    handlers
+                });
+                expect(result).to.equal(4);
+            });
+
+            it('should return the value returned by the 3rd handler when it\'s the first handler to return a value', async () => {
+                const handlers = _.times(5, n => raceHandler(20 - n * 2, n <= 2 ? n : undefined));
+                const result = await testRace({
+                    event: 'events',
+                    handlers
+                });
+                expect(result).to.equal(2);
+            });
+
+            it('should succeed if any of the handlers successfully returns a value', async () => {
+                const handlers = _.times(5, n => raceHandler(20 - n * 2, new Error('error')));
+                handlers.unshift(raceHandler(20, 'success'));
+                handlers[0].delay = 12;
+                const result = await testRace({
+                    event: 'events',
+                    handlers
+                });
+                expect(result).to.equal('success');
+            });
+
+            it('should error if all the handlers fail', async () => {
+                const handlers = _.times(5, n => raceHandler(20 - n * 2, new Error('error')));
+                return testRace({
+                    event: 'events',
+                    handlers
+                })
+                    .then((result) => Promise.reject(new Error(`Expected error. Instead got ${JSON.stringify(result, null, 4)}`)))
+                    .catch(error => _.get(error, 'message', '').includes('All handlers errored') ? Promise.resolve() : Promise.reject(error));
+            });
+
+            it('should return undefined if one of the handlers returned undefined and all other handlers errored', async () => {
+                const handlers = _.times(5, n => raceHandler(20 - n * 2, new Error('error')));
+                handlers.unshift(raceHandler(20, undefined));
+                handlers[0].delay = 12;
+                const result = await testRace({
+                    event: 'events',
+                    handlers
+                });
+                expect(result).to.equal(undefined);
+            });
+        });
     });
 });
