@@ -655,7 +655,20 @@ describe('Aggregating Event Emitter', () => {
                 sinon.verify();
             });
 
-            it('should still have all listeners in sorted order after removing a listener');
+            it('should still have all listeners in sorted order after removing a listener', () => {
+                const handlers = _.times(9, n => () => n);
+                const registerHandlers = {
+                    event: handlers.slice(0, 3),
+                    'event:-1': handlers.slice(3, 6),
+                    'event:1': handlers.slice(6, 9)
+                };
+                const events = register(registerHandlers, { lifecycles: ['before', 'default', 'after'] });
+                events.off('event', handlers[1]);
+                events.off('event', handlers[4]);
+                events.off('event', handlers[7]);
+                const result = events.emit('event');
+                expect(result).to.deep.equal([[], [3, 5, 0, 2, 6, 8], []]);
+            });
         });
 
         const commonLifecycleTests = emitFunction => {
