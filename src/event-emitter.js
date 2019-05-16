@@ -64,10 +64,10 @@ const getHandlers = {
     })
 };
 
-const getLifecycle = (event, lifecycles) => {
+const getLifecycle = (event, lifecycles, unregistering = false) => {
     let split = event.split(':');
     let lifecycle;
-    if (lifecycles.includes(split[0])) {
+    if (lifecycles.includes(split[0]) || (split[0] === '*' && unregistering)) {
         lifecycle = split[0];
         split = split.slice(1);
     } else if (lifecycles.includes('default')) {
@@ -104,10 +104,40 @@ const eventRegistrars = {
         handler.sortOrder = sortOrder;
         lifecycleEvents.push(handler);
         lifecycleEvents.sort((leftHandler, rightHandler) => leftHandler.sortOrder - rightHandler.sortOrder);
-    })
+    }),
+    unregister: {
+        basic: _.curry((data, event, handlerToRemove = undefined) => {
+            const events = data.events[event];
+            if (events && events.length > 0) {
+                if (handlerToRemove) {
+                    data.events[event] = events.filter(handler => handler !== handlerToRemove);
+                } else {
+                    data.events[event].length = 0;
+                }
+            }
+        }),
+        lifecycles: _.curry((data, event, handlerToRemove = undefined) => {
+            const [lifecycle, eventName] = getLifecycle(event, data.lifecycles, true);
+            const removeFromLifecycle = lifecycle => {
+                const lifecycleEventsPath = [eventName, data.lifecycles.indexOf(lifecycle)];
+                const lifecycleEvents = _.get(data.events, lifecycleEventsPath, []);
+                if (handlerToRemove) {
+                    _.remove(lifecycleEvents, handler => handler === handlerToRemove);
+                } else {
+                    lifecycleEvents.length = 0;
+                }
+            };
+
+            if (lifecycle === '*') {
+                data.lifecycles.forEach(removeFromLifecycle);
+            } else {
+                removeFromLifecycle(lifecycle);
+            }
+        })
+    }
 };
 
-const eventEmitter = ({ data, getHandlers, registerEventHandler }) => {
+const eventEmitter = ({ data, getHandlers, registerEventHandler, unregisterEventHandler }) => {
     const getEventObject = eventName => {
         const meta = {
             action: 'continue'
@@ -286,7 +316,8 @@ const eventEmitter = ({ data, getHandlers, registerEventHandler }) => {
         emitAsync,
         emitWaterfall,
         emitWaterfallAsync,
-        on: registerEventHandler
+        on: registerEventHandler,
+        off: unregisterEventHandler
     };
 };
 
@@ -312,6 +343,7 @@ const configureEventEmitter = ({ wildcards = false, listOptions = false, lifecyc
     const options = {
         getHandlers: getHandlers.exact(data),
         registerEventHandler: eventRegistrars.basic(data),
+        unregisterEventHandler: eventRegistrars.unregister.basic(data),
         data,
         useAdvancedMatcher: false
     };
@@ -333,6 +365,7 @@ const configureEventEmitter = ({ wildcards = false, listOptions = false, lifecyc
             data.lifecycles = ['early', 'before', 'default', 'after', 'late'];
         }
         options.registerEventHandler = eventRegistrars.lifecycles(data);
+        options.unregisterEventHandler = eventRegistrars.unregister.lifecycles(data);
         options.useAdvancedMatcher = true;
     }
 

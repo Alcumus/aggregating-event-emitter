@@ -114,6 +114,18 @@ describe('Aggregating Event Emitter', () => {
                     await eventEmitter[emitFunction](eventName);
                     sinon.verify();
                 });
+
+                it(`#${emitFunction} should respect unregistering of individual event handlers against ${pattern}`, async () => {
+                    const eventHandlers = [
+                        sinon.mock(`match:${pattern}`).once(),
+                        sinon.mock(`unregistered:${pattern}`).never(),
+                        sinon.mock(`match:${pattern}`).once()
+                    ];
+                    const eventEmitter = register({ [pattern]: eventHandlers });
+                    eventEmitter.off(pattern, eventHandlers[1]);
+                    await eventEmitter[emitFunction](pattern);
+                    sinon.verify();
+                });
             });
 
             it(`#${emitFunction} should call event handlers registered on all events that match`, async () => {
@@ -132,6 +144,17 @@ describe('Aggregating Event Emitter', () => {
 
                 await eventEmitter[emitFunction]('event');
                 await eventEmitter[emitFunction]('second.event');
+                sinon.verify();
+            });
+
+            it(`#${emitFunction} should respect unregistering of all event handlers`, async () => {
+                const events = [
+                    sinon.mock('unregistered-event-handler').never(),
+                    sinon.mock('second-unregistered-event-handler').never()
+                ];
+                const eventEmitter = register({ events });
+                eventEmitter.off('events');
+                await eventEmitter[emitFunction]('events');
                 sinon.verify();
             });
         });
@@ -552,6 +575,87 @@ describe('Aggregating Event Emitter', () => {
                     'Handlers called in the wrong order'
                 ).to.equal(true);
             });
+        });
+
+        describe('#off', () => {
+            it('should remove listener from event when passing both an event and a listener', () => {
+                const registerHandlers = {
+                    event: [sinon.mock('match').once(), sinon.mock('unregistered').never(), sinon.mock('match').once()]
+                };
+                const events = register(registerHandlers, { lifecycles: true });
+                events.off('event', registerHandlers.event[1]);
+                events.emit('event');
+                sinon.verify();
+            });
+
+            it('should remove all listeners from event default lifecycle when passing only an event name', () => {
+                const registerHandlers = {
+                    event: [sinon.mock('unregistered').never(), sinon.mock('unregistered').never(), sinon.mock('unregistered').never()]
+                };
+                const events = register(registerHandlers, { lifecycles: true });
+                events.off('event');
+                events.emit('event');
+                sinon.verify();
+            });
+
+            it('should not remove listeners from other events', () => {
+                const registerHandlers = {
+                    event: [sinon.mock('match:secondEvent').once(), sinon.mock('match:secondEvent').once(), sinon.mock('match:secondEvent').once()]
+                };
+                registerHandlers.secondEvent = registerHandlers.event;
+                const events = register(registerHandlers, { lifecycles: true });
+                events.off('event');
+                events.emit('event');
+                events.emit('secondEvent');
+                sinon.verify();
+            });
+
+            it('should not remove listeners from other lifecycles', () => {
+                const registerHandlers = {
+                    event: [
+                        sinon.mock('match:before:event').once().withExactArgs(sinon.match({ lifecycles: {} })).returns(1),
+                        sinon.mock('match:before:event').once().withExactArgs(sinon.match({ lifecycles: { before: [1] } })).returns(2),
+                        sinon.mock('match:before:event').once().withExactArgs(sinon.match({ lifecycles: { before: [1, 2] } })).returns(3)
+                    ]
+                };
+                registerHandlers['before:event'] = registerHandlers.event;
+                const events = register(registerHandlers, { lifecycles: true });
+                events.off('event');
+                events.emit('event');
+                sinon.verify();
+            });
+
+            it('should remove listener from all lifecycles when passing * as the lifecycle', () => {
+                const handlers = [sinon.mock('match:all').exactly(5), sinon.mock('unregistered').never(), sinon.mock('match:all').exactly(5)];
+                const registerHandlers = {
+                    'early:event': handlers,
+                    'before:event': handlers,
+                    event: handlers,
+                    'after:event': handlers,
+                    'late:event': handlers
+                };
+                const events = register(registerHandlers, { lifecycles: true });
+                events.off('*:event', handlers[1]);
+                events.emit('event');
+                sinon.verify();
+            });
+
+            it('should remove all listeners from all lifecycles when passing only an event name with * as the lifecycle', () => {
+                const handlers = _.times(3, () => sinon.mock('unregistered').never());
+                const registerHandlers = {
+                    'early:event': handlers,
+                    'before:event': handlers,
+                    event: handlers,
+                    'after:event': handlers,
+                    'late:event': handlers
+                };
+                const events = register(registerHandlers, { lifecycles: true });
+                events.off('*:event');
+                events.emit('event');
+                sinon.verify();
+            });
+
+            it('should still have all listeners in sorted order after removing a listener');
         });
 
         const commonLifecycleTests = emitFunction => {
