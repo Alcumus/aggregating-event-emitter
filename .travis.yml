@@ -4,4 +4,16 @@ node_js:
 script:
   - 'npm run lint'
   - 'npm test'
+deploy:
+  - provider: script
+    script: npx publish-new --email "$npm_publish_email" --api-key: "$npm_publish_key"
+    keep_history: true
+    on:
+      branch: master
+  - provider: script
+    script: npx publish-pre-release --email "$npm_publish_email" --api-key: "$npm_publish_key"
+    keep_history: true
+    on:
+      all_branches: true
+      condition: $TRAVIS_BRANCH != master
 
