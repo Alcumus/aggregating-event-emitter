@@ -22,13 +22,13 @@
   "author": "Alcumus Group",
   "license": "ISC",
   "devDependencies": {
-    "@alcumus/common-tools": "0.0.16",
+    "@alcumus/common-tools": "0.0.19",
     "benchmark": "^2.1.4",
     "chai": "^4.2.0",
     "eslint": "^5.15.1",
-    "jsdoc": "^3.5.5",
-    "mocha": "^6.0.2",
-    "nyc": "^13.3.0",
+    "jsdoc": "^3.6.2",
+    "mocha": "^6.1.4",
+    "nyc": "^14.0.0",
     "sinon": "^7.2.7"
   },
   "dependencies": {
