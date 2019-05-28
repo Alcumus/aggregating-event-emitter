@@ -22,7 +22,7 @@
   "author": "Alcumus Group",
   "license": "ISC",
   "devDependencies": {
-    "@alcumus/common-tools": "0.0.16",
+    "@alcumus/common-tools": "^0.1.2",
     "benchmark": "^2.1.4",
     "chai": "^4.2.0",
     "eslint": "^5.15.1",
