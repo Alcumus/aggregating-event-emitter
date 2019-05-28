@@ -588,6 +588,17 @@ describe('Aggregating Event Emitter', () => {
                 sinon.verify();
             });
 
+            it('should remove listener from event even after it has been fired once', () => {
+                const registerHandlers = {
+                    event: [sinon.mock('match').twice(), sinon.mock('unregistered').once(), sinon.mock('match').twice()]
+                };
+                const events = register(registerHandlers, { lifecycles: true });
+                events.emit('event');
+                events.off('event', registerHandlers.event[1]);
+                events.emit('event');
+                sinon.verify();
+            });
+
             it('should remove all listeners from event default lifecycle when passing only an event name', () => {
                 const registerHandlers = {
                     event: [sinon.mock('unregistered').never(), sinon.mock('unregistered').never(), sinon.mock('unregistered').never()]
