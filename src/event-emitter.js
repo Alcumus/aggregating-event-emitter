@@ -295,6 +295,49 @@ const eventEmitter = ({ data, getHandlers, registerEventHandler, unregisterEvent
     };
 
     /**
+     * Emit an event asynchronously and wait for the first result only.
+     *
+     * @name EventEmitter#race
+     * @param {string} event The name of the event to emit (use full-stop '.' as a namespace delimiter).
+     * @param {...*} [args] Any number of arguments to pass to the first event handler.
+     * @returns The first value returned by any event handler that executed.
+     */
+    const race = async (event, ...args) => {
+        const { handlers, eventObject } = getEventObject(event);
+        return new Promise((resolve, reject) => {
+            const promises = handlers.map(async (handler) => handler(eventObject, ...args));
+            let resolved = false;
+            let errored = 0;
+            let skipped = 0;
+            promises.forEach(promise => {
+                promise
+                    .then(result => {
+                        if (resolved) {
+                            return;
+                        }
+                        if (!_.isUndefined(result)) {
+                            resolved = true;
+                            return resolve(result);
+                        } else {
+                            skipped += 1;
+                        }
+                    })
+                    .catch(error => {
+                        errored += 1;
+                        if (errored === handlers.length) {
+                            reject(new Error(`All handlers errored. The last error was: ${ error.message || error }`));
+                        }
+                    })
+                    .then(() => {
+                        if (errored + skipped === handlers.length) {
+                            return resolve();
+                        }
+                    });
+            });
+        });
+    };
+
+    /**
      * Register an event handler. The event handler will be called when any event matching the event string is emitted. The order of execution and parameters
      * passed to the handler can change based on which emit was used. {@link EventEmitter#emit} {@link EventEmitter#emitWaterfall}.
      *
@@ -316,6 +359,7 @@ const eventEmitter = ({ data, getHandlers, registerEventHandler, unregisterEvent
         emitAsync,
         emitWaterfall,
         emitWaterfallAsync,
+        race,
         on: registerEventHandler,
         off: unregisterEventHandler
     };
